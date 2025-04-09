@@ -1,270 +1,97 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt">
 <head>
-    <title>GeoNode Layer Viewer</title>
-    <meta charset="utf-8" />
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-    <script src="https://unpkg.com/terraformer@1.0.12"></script>
-    <script src="https://unpkg.com/terraformer-wkt-parser@1.2.1"></script>
-
+    <title>Mapa - AB Soluções | Hulha Negra</title>
     <style>
-        body {
+        /* Reset geral */
+        * {
             margin: 0;
             padding: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            box-sizing: border-box;
+            font-family: "Arial", sans-serif;
         }
 
-        #map {
+        /* Corpo da página com fundo temático */
+        body {
+            background: linear-gradient(to right, #006400, #228B22, #32CD32); /* Degradê de verdes */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
             height: 100vh;
         }
 
-        .layer-menu {
-            position: absolute;
-            background: #ffffff;
-            padding: 8px;
-            border-radius: 8px;
-            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
-            z-index: 1000;
-            width: 220px;
-            font-size: 12px;
+        /* Cabeçalho com cores agro-tech */
+        header {
+            width: 100%;
+            background: #FFD700; /* Amarelo vibrante */
+            color: #004d00; /* Verde escuro */
+            text-align: center;
+            padding: 15px 0;
+            font-size: 22px;
+            font-weight: bold;
+            text-transform: uppercase;
+            box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.3);
         }
 
-        #municipio-info-popup {
-            top: 10px;
-            left: 10px;
+        .subtitle {
+            font-size: 16px;
+            font-weight: normal;
+            color: #006400;
         }
 
-        #ndvi-menu {
-            bottom: 10px;
-            left: 10px;
-        }
-
-        .layer-menu strong {
-            font-size: 14px;
-            display: block;
-            margin-bottom: 6px;
-        }
-
-        .layer-item {
-            display: flex;
-            align-items: center;
-            margin-bottom: 4px;
-        }
-
-        .layer-item input[type="checkbox"] {
-            margin-right: 6px;
-            accent-color: #0078d7;
-            transform: scale(0.9);
-        }
-
-        .layer-item label {
+        /* Container do mapa ocupando quase toda a tela */
+        #map-container {
             flex-grow: 1;
-            font-size: 12px;
-            color: #333;
+            width: 95%;
+            max-width: 1600px;
+            height: 88vh; /* Ocupar quase toda a tela */
+            background: #ffffff;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0px 8px 20px rgba(0, 0, 0, 0.2);
+            margin-top: 10px;
+            border: 4px solid #FFD700; /* Destaque na borda */
         }
 
-        #legend {
-            position: absolute;
-            bottom: 20px;
-            right: 10px;
-            background: white;
-            padding: 2px 6px;
-            border-radius: 6px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-            border: 1px solid #ccc;
-            z-index: 1000;
-            font-size: 10px;
-            max-width: 120px;
+        /* O iframe ocupa todo o espaço dentro do contêiner */
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
         }
 
-        #legend img {
-            width: 80px;
-            height: auto;
-            display: block;
-            margin-top: 2px;
+        /* Rodapé fixo na parte inferior */
+        footer {
+            width: 100%;
+            text-align: center;
+            padding: 10px;
+            font-size: 14px;
+            font-weight: bold;
+            color: white;
+            background: #004d00; /* Verde escuro */
+            box-shadow: 0px -4px 8px rgba(0, 0, 0, 0.3);
         }
     </style>
 </head>
 <body>
 
-<div id="map"></div>
+    <!-- Cabeçalho -->
+    <header>
+        ACTIS - Geoprocessamento e Inteligência Territorial
+        <div class="subtitle">Mapa interativo do município de Hulha Negra</div>
+    </header>
 
-<div class="layer-menu" id="municipio-info-popup" style="display:none;">
-    <strong>Município:</strong>
-    <div id="municipio-nome">Selecionado</div>
-    <button onclick="abrirNDVIMenu()">NDVI</button>
-    <button>Produção de Soja</button>
-</div>
+    <!-- Mapa em tela quase cheia -->
+    <div id="map-container">
+        <iframe src="http://10.70.185.94/maps/1/embed"></iframe>
+    </div>
 
-<div class="layer-menu" id="ndvi-menu" style="display:none;">
-    <strong>NDVI:</strong>
-    <div id="ndvi-layers">Carregando NDVI...</div>
-</div>
-
-<div id="legend">
-    <strong>Legenda:</strong>
-    <div id="legend-image">Selecione uma camada</div>
-</div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script>
-    const map = L.map('map');
-    const geoNodeBaseUrl = 'http://10.70.185.94';
-    const mapId = 13;
-
-    const wmsLayers = {};
-    const layerMetadata = {};
-    let shapeLayerName = null;
-    let municipioGeometry = null;
-    let municipioLayer = null;
-
-    function updateLegend(layerName, style) {
-        const legendUrl = `${geoNodeBaseUrl}/geoserver/wms?REQUEST=GetLegendGraphic&VERSION=1.0.0&FORMAT=image/png&LAYER=${layerName}&STYLE=${style}`;
-        document.getElementById('legend-image').innerHTML = `<img src="${legendUrl}" alt="Legenda da camada">`;
-    }
-
-    function abrirNDVIMenu() {
-        document.getElementById('ndvi-menu').style.display = 'block';
-
-        const ndviGroup = Object.entries(layerMetadata).filter(([name, meta]) =>
-            meta.title.toUpperCase().includes("NDVI")
-        );
-
-        const container = document.getElementById('ndvi-layers');
-        container.innerHTML = '';
-
-        ndviGroup.forEach(([name, meta]) => {
-            const div = document.createElement('div');
-            div.className = 'layer-item';
-
-            const input = document.createElement('input');
-            input.type = 'checkbox';
-            input.dataset.layer = name;
-
-            input.addEventListener('change', (e) => {
-                const lname = e.target.dataset.layer;
-                const layer = wmsLayers[lname];
-
-                if (e.target.checked) {
-                    const cql_filter = geometryToCQL(municipioGeometry);
-                    layer.setParams({ CQL_FILTER: cql_filter });
-                    layer.setZIndex(100); // NDVI abaixo do polígono
-                    layer.addTo(map);
-                    updateLegend(lname, meta.style);
-                } else {
-                    map.removeLayer(layer);
-                    document.getElementById('legend-image').innerHTML = "Selecione uma camada";
-                }
-            });
-
-            const label = document.createElement('label');
-            label.innerText = meta.title;
-
-            div.appendChild(input);
-            div.appendChild(label);
-            container.appendChild(div);
-        });
-    }
-
-    function geometryToCQL(geometry) {
-        if (!geometry) return 'INCLUDE';
-        const wkt = Terraformer.WKT.convert(geometry);
-        return `INTERSECTS(geometry, ${wkt})`;
-    }
-
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        attribution: 'Tiles © Esri'
-    }).addTo(map);
-
-    fetch(`${geoNodeBaseUrl}/api/v2/maps/${mapId}/`)
-        .then(res => res.json())
-        .then(data => {
-            const mapData = data.map;
-            const bounds = mapData.extent?.coords || [-57.6, -33.7, -49.6, -27.0];
-            map.fitBounds([
-                [bounds[1], bounds[0]],
-                [bounds[3], bounds[2]]
-            ]);
-
-            const layers = mapData.maplayers;
-
-            layers.forEach(layer => {
-                const title = layer.dataset?.title || layer.name;
-                const style = layer.current_style || '';
-                const name = layer.name;
-
-                const group = title.toUpperCase().includes("MUNICIPIOS") || title.toUpperCase().includes("SHAPE") ? 'SHAPEFILE' : 'RASTER';
-                if (group === 'SHAPEFILE' && !shapeLayerName) shapeLayerName = name;
-
-                const wms = L.tileLayer.wms(`${geoNodeBaseUrl}/geoserver/wms`, {
-                    layers: name,
-                    styles: style,
-                    format: 'image/png',
-                    transparent: true,
-                    version: '1.3.0'
-                });
-
-                if (group === 'SHAPEFILE') {
-                    wms.setZIndex(300); // shapefile acima dos outros por padrão
-                    wms.addTo(map);
-                }
-
-                wmsLayers[name] = wms;
-                layerMetadata[name] = { title, style, group };
-            });
-        })
-        .catch(err => console.error('Erro ao buscar dados do mapa:', err));
-
-    map.on('click', function (e) {
-        const { lat, lng } = e.latlng;
-
-        const cityQueryUrl = `${geoNodeBaseUrl}/geoserver/ows?SERVICE=WFS&VERSION=1.0.0&REQUEST=GetFeature&TYPENAME=geonode:rs_municipios_2022&CQL_FILTER=INTERSECTS(geometry, POINT(${lng} ${lat}))&OUTPUTFORMAT=application/json`;
-
-        fetch(cityQueryUrl)
-            .then(res => res.json())
-            .then(cityData => {
-                if (cityData.features && cityData.features.length > 0) {
-                    const nome = cityData.features[0].properties.nm_mun || 'Sem nome';
-                    municipioGeometry = cityData.features[0].geometry;
-
-                    document.getElementById('municipio-info-popup').style.display = 'block';
-                    document.getElementById('municipio-nome').innerText = nome;
-
-                    if (municipioLayer) map.removeLayer(municipioLayer);
-
-                    municipioLayer = L.geoJSON(municipioGeometry, {
-                        color: '#ff6600',
-                        weight: 2,
-                        fillOpacity: 0.1
-                    }).addTo(map);
-                    municipioLayer.setZIndex(200); // por cima do NDVI
-
-                    // Remove shapefile se estiver no mapa (fica por cima senão)
-                    if (shapeLayerName && map.hasLayer(wmsLayers[shapeLayerName])) {
-                        map.removeLayer(wmsLayers[shapeLayerName]);
-                    }
-
-                    L.popup()
-                        .setLatLng(e.latlng)
-                        .setContent(`<b>Município:</b> ${nome}`)
-                        .openOn(map);
-                } else {
-                    municipioGeometry = null;
-                    if (municipioLayer) map.removeLayer(municipioLayer);
-                    document.getElementById('municipio-info-popup').style.display = 'none';
-                }
-            })
-            .catch(err => {
-                console.error("Erro na consulta de município:", err);
-                L.popup()
-                    .setLatLng(e.latlng)
-                    .setContent("Erro ao consultar município.")
-                    .openOn(map);
-            });
-    });
-</script>
+    <!-- Rodapé -->
+    <footer>
+        &copy; 2025 ACTIS | Transformando dados em soluções estratégicas
+    </footer>
 
 </body>
 </html>
